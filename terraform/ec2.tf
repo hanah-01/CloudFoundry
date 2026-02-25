@@ -3,7 +3,7 @@ resource "aws_instance" "web_server" {
   instance_type               = var.instance_type
   subnet_id                   = aws_subnet.public.id
   vpc_security_group_ids      = [aws_security_group.web_server.id]
-  associate_public_ip_address = true
+  associate_publics_ip_address = true
 
   key_name = var.ec2_key_name != "" ? var.ec2_key_name : null
 
