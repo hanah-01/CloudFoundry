@@ -1,0 +1,30 @@
+version: "3.8"
+
+services:
+  localstack:
+    image: localstack/localstack:3.0
+    container_name: localstack
+    ports:
+      - "4566:4566"           
+      - "4510-4559:4510-4559" 
+    environment:
+      - SERVICES=ec2,s3,iam,vpc,sts,lambda,cloudwatch,logs
+      - DEFAULT_REGION=us-east-1
+      - AWS_DEFAULT_REGION=us-east-1
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - DEBUG=0
+      - DATA_DIR=/var/lib/localstack/data
+      - PERSISTENCE=1                     
+    volumes:
+      - localstack_data:/var/lib/localstack
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  localstack_data:
+    driver: local

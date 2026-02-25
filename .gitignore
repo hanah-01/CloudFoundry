@@ -1,0 +1,73 @@
+# ============================================================
+# .gitignore – DevOps Lab Project
+# ============================================================
+
+# ── Terraform ────────────────────────────────────────────────
+.terraform/
+.terraform.lock.hcl
+terraform.tfstate
+terraform.tfstate.backup
+terraform.tfstate.d/
+*.tfplan
+tfplan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# ── Sensitive variable files ──────────────────────────────────
+*.tfvars
+*.tfvars.json
+# Except the example file:
+!terraform.tfvars.example
+
+# ── Ansible ───────────────────────────────────────────────────
+*.retry
+ansible/inventory/hosts            # generated dynamic inventory
+ansible/vault_password
+
+# ── SSH keys ──────────────────────────────────────────────────
+*.pem
+*.ppk
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+
+# ── Docker ────────────────────────────────────────────────────
+docker/data/
+
+# ── macOS ─────────────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# ── Windows ───────────────────────────────────────────────────
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ── Python (checkov, ansible) ─────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+# ── IDE / Editor ─────────────────────────────────────────────
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# ── Security scan results ─────────────────────────────────────
+tfsec-results.json
+checkov-results.json
+results.sarif
+
+# ── Logs ──────────────────────────────────────────────────────
+*.log
+logs/

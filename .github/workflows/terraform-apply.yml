@@ -1,0 +1,98 @@
+# ============================================================
+# terraform-apply.yml
+# Runs on push to main (i.e., after PR is merged).
+# Applies the Terraform plan against LocalStack.
+# ============================================================
+
+name: Terraform Apply
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "terraform/**"
+      - ".github/workflows/terraform-apply.yml"
+
+  # Allow manual trigger from the Actions UI
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        default: "dev"
+        type: choice
+        options:
+          - dev
+          - staging
+
+env:
+  TF_VERSION:  "1.7.0"
+  TF_WORK_DIR: "./terraform"
+
+jobs:
+  terraform-apply:
+    name: "Terraform Apply"
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── Start LocalStack ───────────────────────────────────
+      - name: Start LocalStack
+        uses: LocalStack/setup-localstack@v0.2.3
+        with:
+          image-tag: "latest"
+          install-awslocal: "true"
+
+      # ── Verify LocalStack is healthy ───────────────────────
+      - name: Wait for LocalStack to be ready
+        run: |
+          for i in {1..15}; do
+            if curl -sf http://localhost:4566/_localstack/health | grep -q '"s3": "running"'; then
+              echo "LocalStack is ready"
+              break
+            fi
+            echo "Waiting... ($i)"
+            sleep 5
+          done
+
+      # ── Setup Terraform CLI ────────────────────────────────
+      - name: Setup Terraform ${{ env.TF_VERSION }}
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      # ── Init ──────────────────────────────────────────────
+      - name: Terraform Init
+        run: terraform init -input=false
+        working-directory: ${{ env.TF_WORK_DIR }}
+
+      # ── Validate ──────────────────────────────────────────
+      - name: Terraform Validate
+        run: terraform validate -no-color
+        working-directory: ${{ env.TF_WORK_DIR }}
+
+      # ── Apply ─────────────────────────────────────────────
+      - name: Terraform Apply
+        run: |
+          terraform apply \
+            -auto-approve \
+            -input=false \
+            -var="environment=${{ github.event.inputs.environment || 'dev' }}"
+        working-directory: ${{ env.TF_WORK_DIR }}
+
+      # ── Show outputs ──────────────────────────────────────
+      - name: Terraform Output
+        run: terraform output -no-color
+        working-directory: ${{ env.TF_WORK_DIR }}
+
+      # ── Upload state artifact ─────────────────────────────
+      - name: Upload Terraform State
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-state
+          path: ${{ env.TF_WORK_DIR }}/terraform.tfstate
+          retention-days: 30
