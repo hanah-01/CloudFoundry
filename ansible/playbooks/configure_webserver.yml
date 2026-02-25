@@ -1,0 +1,170 @@
+---
+# ============================================================
+# configure_webserver.yml
+# Installs Nginx, deploys a sample app, hardens the server
+# ============================================================
+
+- name: Configure Web Server
+  hosts: webservers
+  become: true
+  gather_facts: true
+
+  vars:
+    app_name: "devops-lab"
+    nginx_root: "/usr/share/nginx/html"
+    nginx_config_path: "/etc/nginx/conf.d/app.conf"
+    app_port: 80
+
+  # ── Pre-flight checks ──────────────────────────────────────
+  pre_tasks:
+    - name: Verify target OS is Amazon Linux / RHEL family
+      ansible.builtin.assert:
+        that: ansible_os_family == "RedHat"
+        fail_msg: "This playbook only supports RedHat-family OS."
+
+    - name: Ensure Python 3 is available
+      ansible.builtin.package:
+        name: python3
+        state: present
+
+  # ── Main tasks ─────────────────────────────────────────────
+  tasks:
+
+    # ── 1. System Update ─────────────────────────────────────
+    - name: Update all installed packages
+      ansible.builtin.yum:
+        name: "*"
+        state: latest
+        update_cache: true
+      register: yum_update
+      changed_when: yum_update.changed
+
+    # ── 2. Install Nginx ─────────────────────────────────────
+    - name: Install Nginx
+      ansible.builtin.yum:
+        name:
+          - nginx
+          - curl
+          - wget
+        state: present
+
+    # ── 3. Deploy sample application ─────────────────────────
+    - name: Create application directory
+      ansible.builtin.file:
+        path: "{{ nginx_root }}/{{ app_name }}"
+        state: directory
+        owner: nginx
+        group: nginx
+        mode: "0755"
+
+    - name: Deploy index.html
+      ansible.builtin.copy:
+        dest: "{{ nginx_root }}/index.html"
+        owner: nginx
+        group: nginx
+        mode: "0644"
+        content: |
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="UTF-8">
+            <title>{{ app_name }} | DevOps Lab</title>
+            <style>
+              body { font-family: Arial, sans-serif; background: #1a1a2e; color: #eee; text-align: center; padding: 4rem; }
+              h1   { color: #e94560; }
+              p    { font-size: 1.2rem; }
+              .badge { display: inline-block; background: #16213e; border: 1px solid #e94560;
+                       padding: .3rem .8rem; border-radius: 20px; margin: .25rem; font-size: .9rem; }
+            </style>
+          </head>
+          <body>
+            <h1>&#9989; {{ app_name }}</h1>
+            <p>Infrastructure deployed via <strong>Terraform + LocalStack</strong><br>
+               Server configured by <strong>Ansible</strong></p>
+            <br>
+            <span class="badge">Terraform</span>
+            <span class="badge">LocalStack</span>
+            <span class="badge">Ansible</span>
+            <span class="badge">GitHub Actions</span>
+            <span class="badge">tfsec</span>
+          </body>
+          </html>
+
+    # ── 4. Nginx configuration ────────────────────────────────
+    - name: Deploy Nginx server block
+      ansible.builtin.copy:
+        dest: "{{ nginx_config_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          server {
+              listen       {{ app_port }};
+              server_name  _;
+              root         {{ nginx_root }};
+              index        index.html;
+
+              # Security headers
+              add_header X-Frame-Options        "SAMEORIGIN"   always;
+              add_header X-Content-Type-Options "nosniff"      always;
+              add_header X-XSS-Protection       "1; mode=block" always;
+
+              location / {
+                  try_files $uri $uri/ =404;
+              }
+
+              # Disable server token in response header
+              server_tokens off;
+          }
+      notify: Reload Nginx
+
+    # ── 5. Security hardening ─────────────────────────────────
+    - name: Disable root SSH login
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "^PermitRootLogin"
+        line:  "PermitRootLogin no"
+        state: present
+        backup: true
+      notify: Restart SSH
+
+    - name: Disable SSH password authentication
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "^PasswordAuthentication"
+        line:  "PasswordAuthentication no"
+        state: present
+      notify: Restart SSH
+
+    # ── 6. Start and enable Nginx ─────────────────────────────
+    - name: Start and enable Nginx service
+      ansible.builtin.systemd:
+        name:    nginx
+        state:   started
+        enabled: true
+
+    # ── 7. Smoke test ─────────────────────────────────────────
+    - name: Verify Nginx responds on port 80
+      ansible.builtin.uri:
+        url:    "http://localhost:{{ app_port }}"
+        method: GET
+        status_code: 200
+      register: health_check
+      retries: 3
+      delay: 5
+
+    - name: Print health check result
+      ansible.builtin.debug:
+        msg: "Health check: {{ health_check.status }} {{ health_check.url }}"
+
+  # ── Handlers ───────────────────────────────────────────────
+  handlers:
+    - name: Reload Nginx
+      ansible.builtin.systemd:
+        name:  nginx
+        state: reloaded
+
+    - name: Restart SSH
+      ansible.builtin.systemd:
+        name:  sshd
+        state: restarted
