@@ -34,7 +34,7 @@ docker compose -f docker/docker-compose.yml up -d
 
 info "Waiting for LocalStack to be healthy..."
 attempt=0
-max_attempts=30
+max_attempts=60
 until curl -sf http://localhost:4566/_localstack/health \
       | grep -q '"s3": "running"' 2>/dev/null; do
   attempt=$((attempt + 1))
@@ -42,7 +42,7 @@ until curl -sf http://localhost:4566/_localstack/health \
     error "LocalStack did not become healthy after ${max_attempts} attempts."
   fi
   echo -n "."
-  sleep 3
+  sleep 5
 done
 echo ""
 info "LocalStack is ready!"

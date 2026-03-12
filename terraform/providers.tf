@@ -1,8 +1,3 @@
-# ============================================================
-# providers.tf  –  Configure Terraform providers
-# LocalStack endpoints override real AWS for local simulation
-# ============================================================
-
 terraform {
   required_version = ">= 1.5.0"
 
@@ -11,13 +6,13 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
+    archive = {
+      source  = "hashicorp/archive"
+      version = "~> 2.0"
+    }
   }
 }
 
-# -----------------------------------------------------------------
-# AWS Provider – pointed at LocalStack running on localhost:4566
-# Credentials are dummy values; LocalStack accepts any key/secret
-# -----------------------------------------------------------------
 provider "aws" {
   region                      = var.aws_region
   access_key                  = "test"
@@ -25,15 +20,20 @@ provider "aws" {
   skip_credentials_validation = true
   skip_metadata_api_check     = true
   skip_requesting_account_id  = true
+  s3_use_path_style           = true   # Required for LocalStack: use path-style S3 URLs
 
-  # Route every AWS API call to LocalStack
   endpoints {
     ec2         = "http://localhost:4566"
     s3          = "http://localhost:4566"
     iam         = "http://localhost:4566"
     sts         = "http://localhost:4566"
     lambda      = "http://localhost:4566"
+    dynamodb    = "http://localhost:4566"
     cloudwatch  = "http://localhost:4566"
     logs        = "http://localhost:4566"
+  }
+
+  default_tags {
+    tags = var.common_tags
   }
 }

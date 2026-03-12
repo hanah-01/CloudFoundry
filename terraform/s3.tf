@@ -8,9 +8,6 @@ resource "aws_s3_bucket" "artifacts" {
   })
 }
 
-# -----------------------------------------------------------------
-# Block all public access (DevSecOps best practice)
-# -----------------------------------------------------------------
 resource "aws_s3_bucket_public_access_block" "artifacts" {
   bucket = aws_s3_bucket.artifacts.id
 
@@ -20,9 +17,6 @@ resource "aws_s3_bucket_public_access_block" "artifacts" {
   restrict_public_buckets = true
 }
 
-# -----------------------------------------------------------------
-# Enable versioning so object history is preserved
-# -----------------------------------------------------------------
 resource "aws_s3_bucket_versioning" "artifacts" {
   bucket = aws_s3_bucket.artifacts.id
 
@@ -31,9 +25,6 @@ resource "aws_s3_bucket_versioning" "artifacts" {
   }
 }
 
-# -----------------------------------------------------------------
-# Server-side encryption – AES-256 (DevSecOps requirement)
-# -----------------------------------------------------------------
 resource "aws_s3_bucket_server_side_encryption_configuration" "artifacts" {
   bucket = aws_s3_bucket.artifacts.id
 
@@ -44,10 +35,8 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "artifacts" {
   }
 }
 
-# -----------------------------------------------------------------
-# Lifecycle rule – expire old objects after 90 days (cost control)
-# -----------------------------------------------------------------
 resource "aws_s3_bucket_lifecycle_configuration" "artifacts" {
+  count  = var.localstack_mode ? 0 : 1   # Not supported in LocalStack free tier
   bucket = aws_s3_bucket.artifacts.id
 
   rule {

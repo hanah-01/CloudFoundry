@@ -1,7 +1,3 @@
-# ============================================================
-# variables.tf  –  Input variable definitions
-# ============================================================
-
 variable "aws_region" {
   description = "AWS region used by LocalStack"
   type        = string
@@ -63,11 +59,30 @@ variable "ec2_key_name" {
   default     = ""
 }
 
+variable "create_ec2" {
+  description = "Set to true to create the EC2 instance. Disabled by default because LocalStack free tier does not support EC2."
+  type        = bool
+  default     = false
+}
+
+variable "localstack_mode" {
+  description = "Set to true when running against LocalStack free. Disables features unsupported by LocalStack (lifecycle rules, etc). Set to false for real AWS."
+  type        = bool
+  default     = true
+}
+
 # ── S3 ───────────────────────────────────────────────────────
 variable "s3_bucket_name" {
   description = "Globally unique S3 bucket name"
   type        = string
   default     = "devops-lab-artifacts-bucket"
+}
+
+# ── Lambda ───────────────────────────────────────────────────
+variable "lambda_runtime" {
+  description = "Lambda function runtime"
+  type        = string
+  default     = "python3.11"
 }
 
 # ── Security ─────────────────────────────────────────────────

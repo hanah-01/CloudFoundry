@@ -1,9 +1,11 @@
 resource "aws_instance" "web_server" {
+  count = var.create_ec2 ? 1 : 0   # Disabled for LocalStack (free tier has no EC2 support)
+
   ami                         = var.ami_id
   instance_type               = var.instance_type
   subnet_id                   = aws_subnet.public.id
   vpc_security_group_ids      = [aws_security_group.web_server.id]
-  associate_publics_ip_address = true
+  associate_public_ip_address = true
 
   key_name = var.ec2_key_name != "" ? var.ec2_key_name : null
 
