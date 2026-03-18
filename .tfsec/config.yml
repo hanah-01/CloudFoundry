@@ -1,22 +1,10 @@
-# ============================================================
-# .tfsec/config.yml  –  tfsec configuration
-# https://aquasecurity.github.io/tfsec
-# ============================================================
-
-# Minimum severity to report
 minimum_severity: MEDIUM
 
-# ── Ignored checks ──────────────────────────────────────────
-# These are intentionally disabled for the local lab.
-# In production, remove these and fix the underlying issues.
+# In production, remove these and fix the issues
 exclude:
   # Wide-open SSH is acceptable in lab because LocalStack
   # doesn't have real network exposure.
   - AVD-AWS-0107   # "An egress security group rule allows traffic to /0"
   - AVD-AWS-0104   # "Security group rule allows ingress from public internet"
 
-# ── Output format ────────────────────────────────────────────
 format: default
-
-# ── Workspace scan directories ───────────────────────────────
-# tfsec will scan all .tf files found recursively.

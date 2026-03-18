@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 import boto3
 
 
-def lambda_handler(event):
+def lambda_handler(event, context):
     bucket_name = os.environ.get("BUCKET_NAME", "unknown")
     table_name  = os.environ.get("DYNAMODB_TABLE", "unknown")
     environment = os.environ.get("ENVIRONMENT", "dev")

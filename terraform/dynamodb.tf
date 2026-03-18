@@ -3,12 +3,14 @@ resource "aws_dynamodb_table" "artifacts_metadata" {
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "artifact_id"
 
+  stream_enabled   = true
+  stream_view_type = "NEW_AND_OLD_IMAGES"
+
   attribute {
     name = "artifact_id"
     type = "S"
   }
 
-  # Global Secondary Index to query by environment
   global_secondary_index {
     name            = "environment-index"
     hash_key        = "environment"

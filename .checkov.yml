@@ -1,27 +1,15 @@
-# ============================================================
-# .checkov.yml  –  Checkov IaC security scanner configuration
-# https://www.checkov.io/
-#
-# Run:  checkov -d terraform/ --framework terraform
-# ============================================================
-
-# Only scan Terraform files
 framework:
   - terraform
 
-# Directory to scan (relative to where checkov is invoked)
 directory:
   - terraform
 
-# ── Skipped checks ──────────────────────────────────────────
-# These are disabled for the *local lab* environment only.
 # Review and remove skips for production workloads.
 skip-check:
   - CKV_AWS_8    # "Ensure IMDSv2 is enabled" – not applicable to LocalStack
   - CKV_AWS_79   # "Ensure Instance Metadata Service Version 1 is not enabled" – LocalStack
   - CKV2_AWS_12  # "Ensure the default security group of every VPC restricts all traffic" – lab
 
-# ── Output settings ──────────────────────────────────────────
 output: cli
 compact: false
 quiet: false
