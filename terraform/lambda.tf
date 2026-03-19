@@ -26,25 +26,23 @@ resource "aws_iam_role_policy_attachment" "lambda_basic" {
   role       = aws_iam_role.lambda_exec.name
 }
 
-# Inline policy to allow Lambda to access S3 and DynamoDB
 resource "aws_iam_role_policy" "lambda_s3_dynamo" {
   name = "${var.project_name}-lambda-s3-dynamo-policy"
   role = aws_iam_role.lambda_exec.id
-
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
         Effect   = "Allow"
-        Action   = ["s3:GetObject", "s3:PutObject", "s3:ListBucket"]
+        Action   = ["s3:GetObject", "s3:PutObject"]
         Resource = [
           aws_s3_bucket.artifacts.arn,
-          "${aws_s3_bucket.artifacts.arn}/*"
+          "${aws_s3_bucket.artifacts.arn}/artifacts/*"
         ]
       },
       {
         Effect   = "Allow"
-        Action   = ["dynamodb:PutItem", "dynamodb:GetItem", "dynamodb:Query", "dynamodb:Scan"]
+        Action   = ["dynamodb:PutItem"]
         Resource = aws_dynamodb_table.artifacts_metadata.arn
       }
     ]
@@ -124,22 +122,23 @@ resource "aws_iam_role_policy_attachment" "notifier_basic" {
   role       = aws_iam_role.notifier_exec.name
 }
 
-# The Notifier Lambda strictly requires DynamoDB Stream read permissions
 resource "aws_iam_role_policy" "notifier_stream_policy" {
   name = "${var.project_name}-notifier-stream-policy"
   role = aws_iam_role.notifier_exec.id
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Action = [
-        "dynamodb:GetRecords",
-        "dynamodb:GetShardIterator",
-        "dynamodb:DescribeStream",
-        "dynamodb:ListStreams"
-      ]
-      Effect   = "Allow"
-      Resource = aws_dynamodb_table.artifacts_metadata.stream_arn
-    }]
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = [
+          "dynamodb:GetRecords",
+          "dynamodb:GetShardIterator",
+          "dynamodb:DescribeStream",
+          "dynamodb:ListStreams"
+        ]
+        Resource = aws_dynamodb_table.artifacts_metadata.stream_arn
+      }
+    ]
   })
 }
 

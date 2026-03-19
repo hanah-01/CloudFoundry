@@ -7,7 +7,7 @@ services:
       - "4510-4559:4510-4559"
     environment:
       - LOCALSTACK_AUTH_TOKEN=${LOCALSTACK_AUTH_TOKEN}  
-      - SERVICES=ec2,s3,iam,vpc,sts,lambda,dynamodb,cloudwatch,logs
+      - SERVICES=ec2,s3,iam,vpc,sts,lambda,dynamodb,cloudwatch,logs,apigateway
       - DEFAULT_REGION=us-east-1
       - AWS_DEFAULT_REGION=us-east-1
       - DOCKER_HOST=unix:///var/run/docker.sock

@@ -15,7 +15,20 @@ def lambda_handler(event, context):
     print(f"[INFO] Event received: {json.dumps(event)}")
     print(f"[INFO] Bucket={bucket_name}  Table={table_name}  Env={environment}")
 
-    records = event.get("Records", [{"s3": {"object": {"key": "manual-invoke"}}}])
+
+    #  API Gateway Invocation
+    if "requestContext" in event and "http" in event["requestContext"]:
+        records = [{"s3": {"object": {"key": "api-upload"}}}]
+        try:
+            if event.get("body"):
+                body = json.loads(event["body"])
+                if "key" in body:
+                    records[0]["s3"]["object"]["key"] = body["key"]
+        except Exception:
+            pass
+    else:
+        records = event.get("Records", [{"s3": {"object": {"key": "manual-invoke"}}}])
+
     processed = []
 
     endpoint = "http://host.docker.internal:4566"
@@ -30,12 +43,14 @@ def lambda_handler(event, context):
 
     for record in records:
         key = record.get("s3", {}).get("object", {}).get("key", "unknown")
+        ttl_expiration = int(datetime.now(timezone.utc).timestamp()) + (90 * 24 * 3600)
         item = {
             "artifact_id": str(uuid.uuid4()),
             "environment": environment,
             "bucket": bucket_name,
             "key": key,
             "processed_at": datetime.now(timezone.utc).isoformat(),
+            "ttl_expiration": ttl_expiration,
         }
         table.put_item(Item=item)
         processed.append(item)

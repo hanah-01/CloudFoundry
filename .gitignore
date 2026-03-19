@@ -72,5 +72,3 @@ logs/
 lambda/handler.zip
 response.json
 payload.json
-
-Jenkinsfile
