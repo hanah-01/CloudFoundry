@@ -4,16 +4,19 @@
 
 ## Project Overview
 
-This project demonstrates modern DevOps practices by building a complete cloud infrastructure using **Terraform**, **LocalStack**, and **Jenkins CI/CD**. It implements a serverless event-driven architecture
+This project demonstrates modern DevOps practices by building a complete cloud infrastructure using **Terraform**, **LocalStack**, **Ansible**, **Docker**, and **Jenkins CI/CD**. It implements a serverless event-driven architecture
 
 ### Key Features
 
-- **Infrastructure as Code** - Terraform for VPC, S3, Lambda, DynamoDB, EC2
-- **Cloud Simulation** - LocalStack 
-- **Serverless Pipeline** - Lambda processes artifacts and stores metadata in DynamoDB
-- **CI/CD Automation** - Jenkins pipeline with security scanning (tfsec, Checkov)
-- **Configuration Management** - Ansible playbooks for server setup
-- **Security Best Practices** - S3 encryption, versioning, IAM least privilege
+- **Infrastructure as Code**: Terraform for VPC, S3, Lambda, DynamoDB, EC2, IAM, API Gateway, CloudWatch
+- **Cloud Simulation**: LocalStack for AWS service emulation
+- **Serverless Pipeline**: Lambda processes artifacts and stores metadata in DynamoDB
+- **API Gateway**: Exposes Lambda as a REST endpoint for direct HTTP uploads
+- **Monitoring & Logging**: CloudWatch log groups and alarms for Lambda error monitoring
+- **Automated Data Retention**: S3 lifecycle rules and DynamoDB TTL for cleanup
+- **CI/CD Automation**: Jenkins pipeline with security scanning (tfsec, Checkov), robust for local/cloud
+- **Configuration Management**: Ansible playbooks for server setup
+- **Security Best Practices**: S3 encryption, versioning, IAM least privilege
 
 ---
 
@@ -57,10 +60,7 @@ This project demonstrates modern DevOps practices by building a complete cloud i
 
 ```
 DevOps-Project/
-├── README.md                    # This file
-├── TESTING.md                   # Complete testing guide
-├── payload.json                 # Lambda test event
-│
+├── README.md                   
 ├── terraform/                   # Infrastructure as Code
 │   ├── providers.tf             # AWS + LocalStack configuration
 │   ├── vpc.tf                   # Network infrastructure
@@ -80,7 +80,7 @@ DevOps-Project/
 │
 ├── docker/                      # LocalStack setup
 │   ├── docker-compose.yml       # Container orchestration
-│   └── .env                     # Auth token (not in git)
+│   └── .env                     # Auth token
 │
 ├── ansible/                     # Configuration management
 │   ├── ansible.cfg              # Ansible settings
@@ -93,7 +93,7 @@ DevOps-Project/
 │   ├── apply.sh                 # Terraform apply
 │   └── destroy.sh               # Cleanup resources
 │
-└── Jenkinsfile                  # CI/CD pipeline definition
+└── Jenkinsfile                  # CI/CD pipeline
 ```
 
 ---
@@ -167,10 +167,42 @@ aws --endpoint-url=http://localhost:4566 lambda invoke \
 Get-Content response.json
 ```
 
+
 ### 4️⃣ Verify DynamoDB Records
 
 ```powershell
 # View stored metadata
-aws --endpoint-url=http://localhost:4566 dynamodb scan \
-  --table-name devops-lab-artifacts-metadata
-``
+aws --endpoint-url=http://localhost:4566 dynamodb scan --table-name devops-lab-artifacts-metadata
+```
+
+### 5️⃣ Test API Gateway Upload
+
+```powershell
+# Get the API Gateway endpoint
+terraform output -raw api_gateway_url
+
+# Upload via HTTP POST
+Invoke-RestMethod -Uri <api_gateway_url> -Method POST -Body '{"key": "api-uploaded-file.zip"}' -ContentType "application/json"
+```
+
+### 6️⃣ Check CloudWatch Logs & Alarms
+
+```powershell
+# List CloudWatch alarms
+aws --endpoint-url=http://localhost:4566 cloudwatch describe-alarms --query "MetricAlarms[*].[AlarmName, StateValue]" --output table
+
+# View Lambda logs
+aws --endpoint-url=http://localhost:4566 logs filter-log-events --log-group-name "/aws/lambda/devops-lab-artifacts-processor"
+aws --endpoint-url=http://localhost:4566 logs filter-log-events --log-group-name "/aws/lambda/devops-lab-notification-service"
+```
+
+---
+
+## CI/CD Pipeline (Jenkins)
+
+The Jenkins pipeline (`Jenkinsfile`) is designed for robust local and cloud runs:
+
+- **EC2 is disabled by default** for LocalStack (set `TF_VAR_create_ec2=false`)
+- **Security scans** (`tfsec`, `checkov`) run but do not fail the build
+- **Terraform** runs full plan/apply/validate/format
+- **Resource verification**: S3, DynamoDB, Lambda are listed after apply
