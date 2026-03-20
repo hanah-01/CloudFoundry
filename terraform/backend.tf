@@ -12,7 +12,7 @@ terraform {
     bucket                      = "devops-lab-tf-state"
     key                         = "devops-lab/terraform.tfstate"
     region                      = "us-east-1"
-    endpoint                    = "http://localhost:4566"
+    endpoint                    = "http://host.docker.internal:4566"
     access_key                  = "test"
     secret_key                  = "test"
     skip_credentials_validation = true

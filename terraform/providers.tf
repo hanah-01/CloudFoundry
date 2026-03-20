@@ -23,16 +23,16 @@ provider "aws" {
   s3_use_path_style           = true   # Required for LocalStack: use path-style S3 URLs
 
   endpoints {
-    ec2          = "http://localhost:4566"
-    s3           = "http://localhost:4566"
-    iam          = "http://localhost:4566"
-    sts          = "http://localhost:4566"
-    lambda       = "http://localhost:4566"
-    dynamodb     = "http://localhost:4566"
-    cloudwatch   = "http://localhost:4566"
-    logs         = "http://localhost:4566"
-    apigateway   = "http://localhost:4566"
-    apigatewayv2 = "http://localhost:4566"
+    ec2          = "http://host.docker.internal:4566"
+    s3           = "http://host.docker.internal:4566"
+    iam          = "http://host.docker.internal:4566"
+    sts          = "http://host.docker.internal:4566"
+    lambda       = "http://host.docker.internal:4566"
+    dynamodb     = "http://host.docker.internal:4566"
+    cloudwatch   = "http://host.docker.internal:4566"
+    logs         = "http://host.docker.internal:4566"
+    apigateway   = "http://host.docker.internal:4566"
+    apigatewayv2 = "http://host.docker.internal:4566"
   }
 
   default_tags {

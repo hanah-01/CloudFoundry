@@ -37,10 +37,10 @@ pipeline {
                 sh '''
                     echo "Checking LocalStack health..."
                     for i in $(seq 1 12); do
-                        if curl -sf http://localhost:4566/_localstack/health | grep -q "running"; then
+if curl -sf http://host.docker.internal:4566/_localstack/health; then
                             echo "LocalStack is healthy!"
-                            
-                            aws --endpoint-url=http://localhost:4566 s3 mb s3://devops-lab-tf-state || true
+
+                            aws --endpoint-url=http://host.docker.internal:4566 s3 mb s3://devops-lab-tf-state || true
                             
                             exit 0
                         fi
@@ -136,13 +136,13 @@ pipeline {
             steps {
                 sh '''
                     echo "=== S3 Buckets ==="
-                    aws --endpoint-url=http://localhost:4566 s3 ls
+                    aws --endpoint-url=http://host.docker.internal:4566 s3 ls
 
                     echo "=== DynamoDB Tables ==="
-                    aws --endpoint-url=http://localhost:4566 dynamodb list-tables
+                    aws --endpoint-url=http://host.docker.internal:4566 dynamodb list-tables
 
                     echo "=== Lambda Functions ==="
-                    aws --endpoint-url=http://localhost:4566 lambda list-functions --query "Functions[].FunctionName"
+                    aws --endpoint-url=http://host.docker.internal:4566 lambda list-functions --query "Functions[].FunctionName"
                 '''
             }
         }
