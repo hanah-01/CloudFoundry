@@ -1,0 +1,8 @@
+# Copy to backend.hcl and edit
+bucket         = "your-terraform-state-bucket"
+key            = "prod/terraform.tfstate"
+region         = "us-east-1"
+
+dynamodb_table = "terraform-state-lock"
+
+encrypt        = true

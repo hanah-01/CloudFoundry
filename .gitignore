@@ -18,6 +18,7 @@ override.tf.json
 *.tfvars.json
 # Except the example file:
 !terraform.tfvars.example
+backend.hcl
 
 # ── Ansible ───────────────────────────────────────────────────
 *.retry

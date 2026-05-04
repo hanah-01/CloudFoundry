@@ -1,0 +1,28 @@
+name_prefix         = "devops-lab"
+environment         = "local"
+aws_region          = "us-east-1"
+localstack_endpoint = "http://localhost:4566"
+vpc_cidr            = "10.0.0.0/16"
+public_subnet_cidrs = ["10.0.1.0/24"]
+availability_zones  = []
+instance_type       = "t3.micro"
+ami_id              = "ami-0c55b159cbfafe1f0"
+key_name            = ""
+
+enable_compute       = false
+enable_self_healing  = false
+enable_load_balancer = false
+
+s3_bucket_name  = "devops-lab-artifacts-bucket"
+lambda_runtime  = "python3.11"
+localstack_mode = true
+
+app_ingress_cidr = "0.0.0.0/0"
+ssh_ingress_cidr = ""
+health_check_path = "/"
+
+# tags = {
+#   Project     = "devops-ci-cd"
+#   Owner       = "jenkins"
+#   Environment = "local"
+# }

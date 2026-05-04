@@ -1,0 +1,32 @@
+# Production defaults (copy to terraform.tfvars and edit)
+name_prefix         = "devops-lab"
+environment         = "prod"
+aws_region          = "eu-north-1"
+vpc_cidr            = "10.0.0.0/16"
+public_subnet_cidrs = ["10.0.1.0/24", "10.0.2.0/24"]
+availability_zones  = []
+instance_type       = "t3.micro"
+ami_id              = "ami-0c55b159cbfafe1f0"
+key_name            = "your-keypair-name"
+
+enable_compute       = true
+enable_self_healing  = false
+enable_load_balancer = false
+
+s3_bucket_name  = "devops-lab-artifacts-prod-CHANGE-ME"
+lambda_runtime  = "python3.11"
+localstack_mode = false
+
+desired_capacity = 1
+min_size         = 1
+max_size         = 1
+
+app_ingress_cidr = "0.0.0.0/0"
+ssh_ingress_cidr = "YOUR-IP/32"
+health_check_path = "/"
+
+# tags = {
+#   Project     = "devops-ci-cd"
+#   Owner       = "jenkins"
+#   Environment = "prod"
+# }

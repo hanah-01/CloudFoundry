@@ -17,9 +17,14 @@ info()  { echo -e "${GREEN}[INFO]${NC}  $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 error() { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 
-TF_DIR="terraform"
+ENV="${1:-local}"
+TF_DIR="terraform/environments/${ENV}"
 
-info "===== Terraform Destroy ====="
+if [ ! -d "${TF_DIR}" ]; then
+  error "Terraform environment folder not found: ${TF_DIR}"
+fi
+
+info "===== Terraform Destroy (env=${ENV}) ====="
 warn "This will DESTROY all simulated infrastructure!"
 echo ""
 read -r -p "Type 'yes' to confirm: " confirm
@@ -41,11 +46,13 @@ terraform destroy -auto-approve
 cd ..
 
 # ── Stop LocalStack ───────────────────────────────────────
-read -r -p "Stop LocalStack too? [y/N] " stop_ls
-if [[ "${stop_ls,,}" == "y" ]]; then
-  info "Stopping LocalStack..."
-  docker compose -f docker/docker-compose.yml down -v
-  info "LocalStack stopped."
+if [ "${ENV}" = "local" ]; then
+  read -r -p "Stop LocalStack too? [y/N] " stop_ls
+  if [[ "${stop_ls,,}" == "y" ]]; then
+    info "Stopping LocalStack..."
+    docker compose -f docker/docker-compose.yml down -v
+    info "LocalStack stopped."
+  fi
 fi
 
 info "===== Destroy complete ====="

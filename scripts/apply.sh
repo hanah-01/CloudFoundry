@@ -17,16 +17,22 @@ info()  { echo -e "${GREEN}[INFO]${NC}  $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 error() { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 
-ENV="${1:-dev}"
-TF_DIR="terraform"
+ENV="${1:-local}"
+TF_DIR="terraform/environments/${ENV}"
+
+if [ ! -d "${TF_DIR}" ]; then
+  error "Terraform environment folder not found: ${TF_DIR}"
+fi
 
 info "===== Terraform Apply  (env=${ENV}) ====="
 
-# ── Ensure LocalStack is running ──────────────────────────
-if ! curl -sf http://localhost:4566/_localstack/health >/dev/null 2>&1; then
-  warn "LocalStack doesn't appear to be running. Starting it..."
-  docker compose -f docker/docker-compose.yml up -d
-  sleep 10
+if [ "${ENV}" = "local" ]; then
+  # ── Ensure LocalStack is running ────────────────────────
+  if ! curl -sf http://localhost:4566/_localstack/health >/dev/null 2>&1; then
+    warn "LocalStack doesn't appear to be running. Starting it..."
+    docker compose -f docker/docker-compose.yml up -d
+    sleep 10
+  fi
 fi
 
 cd "$TF_DIR"
@@ -37,7 +43,11 @@ terraform fmt -check -recursive || warn "Formatting issues found. Run: terraform
 
 # ── Init ─────────────────────────────────────────────────
 info "Running terraform init..."
-terraform init -input=false
+if [ -f backend.hcl ]; then
+  terraform init -input=false -backend-config=backend.hcl
+else
+  terraform init -input=false
+fi
 
 # ── Validate ─────────────────────────────────────────────
 info "Running terraform validate..."
@@ -62,7 +72,6 @@ fi
 info "Running terraform plan..."
 terraform plan \
   -input=false \
-  -var="environment=${ENV}" \
   -out=tfplan
 
 # ── Confirm before apply ─────────────────────────────────
