@@ -79,8 +79,8 @@ max_attempts=30
 while [ "$attempt" -lt "$max_attempts" ]; do
   health_status="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}unknown{{end}}' "$LOCALSTACK_NAME" 2>/dev/null || echo unknown)"
   if [ "$health_status" = "healthy" ] && \
-     docker run --rm --network "$DOCKER_NET" --entrypoint '' hashicorp/terraform:1.7.0 \
-       sh -lc 'wget -q --spider http://localstack:4566/_localstack/health'; then
+     docker run --rm --network "$DOCKER_NET" --entrypoint '' curlimages/curl:latest \
+       sh -lc 'curl -s -f http://localstack:4566/_localstack/health'; then
     echo "LocalStack is healthy"
     exit 0
   fi
@@ -117,26 +117,19 @@ exit 1
             steps {
                 sh '''#!/bin/sh
 set -eu
-docker run --rm --network "$DOCKER_NET" \
-  -u "$(id -u):$(id -g)" \
-  -v "$WORKSPACE":/workspace \
-  -w "/workspace/$LOCAL_TF_DIR" \
-  -e TF_IN_AUTOMATION=true \
-  -e TF_PLUGIN_CACHE_DIR=/workspace/.terraform.d/plugin-cache \
-    -e TF_VAR_localstack_endpoint=http://localstack:4566 \
-  -e TF_VAR_enable_compute=false \
-  -e TF_VAR_enable_self_healing=false \
-  -e TF_VAR_enable_load_balancer=false \
-  --entrypoint '' hashicorp/terraform:1.7.0 sh -lc '
-    mkdir -p "$TF_PLUGIN_CACHE_DIR"
-    terraform init -input=false -backend-config=backend.localstack.hcl
-    terraform plan -input=false -out=tfplan
-    if [ "${LOCAL_ACTION}" = "apply" ]; then
-      terraform apply -input=false -auto-approve tfplan
-    elif [ "${LOCAL_ACTION}" = "destroy" ]; then
-      terraform destroy -input=false -auto-approve || true
-    fi
-  '
+export TF_VAR_localstack_endpoint=http://localstack:4566
+export TF_VAR_enable_compute=false
+export TF_VAR_enable_self_healing=false
+export TF_VAR_enable_load_balancer=false
+cd "$LOCAL_TF_DIR"
+mkdir -p "$TF_PLUGIN_CACHE_DIR"
+terraform init -input=false -backend-config=backend.localstack.hcl
+terraform plan -input=false -out=tfplan
+if [ "${LOCAL_ACTION}" = "apply" ]; then
+  terraform apply -input=false -auto-approve tfplan
+elif [ "${LOCAL_ACTION}" = "destroy" ]; then
+  terraform destroy -input=false -auto-approve || true
+fi
 '''
             }
         }
@@ -168,7 +161,7 @@ set -eu
 : "${PROD_AMI_ID:?Set PROD_AMI_ID for production launch template}"
 
 BACKEND_ARGS=""
-if [ -f "$WORKSPACE/$PROD_TF_DIR/backend.hcl" ]; then
+if [ -f "$PROD_TF_DIR/backend.hcl" ]; then
   BACKEND_ARGS="-backend-config=backend.hcl"
 elif [ -n "${TF_BACKEND_BUCKET:-}" ]; then
   TF_BACKEND_KEY="${TF_BACKEND_KEY:-devops/prod/terraform.tfstate}"
@@ -179,30 +172,21 @@ elif [ -n "${TF_BACKEND_BUCKET:-}" ]; then
   fi
 fi
 
-docker run --rm \
-  -u "$(id -u):$(id -g)" \
-  -v "$WORKSPACE":/workspace \
-  -w "/workspace/$PROD_TF_DIR" \
-  -e TF_IN_AUTOMATION=true \
-  -e TF_PLUGIN_CACHE_DIR=/workspace/.terraform.d/plugin-cache \
-  -e AWS_ACCESS_KEY_ID \
-  -e AWS_SECRET_ACCESS_KEY \
-  -e AWS_REGION \
-  -e TF_VAR_ami_id="$PROD_AMI_ID" \
-  -e TF_VAR_enable_compute=true \
-  -e TF_VAR_enable_self_healing=false \
-  -e TF_VAR_enable_load_balancer=false \
-  -e TF_VAR_desired_capacity=1 \
-  -e TF_VAR_min_size=1 \
-  -e TF_VAR_max_size=1 \
-  -e TF_VAR_localstack_mode=false \
-  --entrypoint '' hashicorp/terraform:1.7.0 sh -lc "
-    mkdir -p \"$TF_PLUGIN_CACHE_DIR\"
-    terraform init -input=false ${BACKEND_ARGS}
-    terraform plan -input=false -out=tfplan
-    terraform apply -input=false -auto-approve tfplan
-    terraform output -raw alb_dns_name > /workspace/prod_alb_dns_name.txt || true
-  "
+export TF_VAR_ami_id="$PROD_AMI_ID"
+export TF_VAR_enable_compute=true
+export TF_VAR_enable_self_healing=false
+export TF_VAR_enable_load_balancer=false
+export TF_VAR_desired_capacity=1
+export TF_VAR_min_size=1
+export TF_VAR_max_size=1
+export TF_VAR_localstack_mode=false
+
+cd "$PROD_TF_DIR"
+mkdir -p "$TF_PLUGIN_CACHE_DIR"
+terraform init -input=false ${BACKEND_ARGS}
+terraform plan -input=false -out=tfplan
+terraform apply -input=false -auto-approve tfplan
+terraform output -raw alb_dns_name > ../../../prod_alb_dns_name.txt || true
 '''
                                 }
             }
@@ -213,21 +197,14 @@ docker run --rm \
         always {
             sh '''#!/bin/sh
 set +e
-docker run --rm --network "$DOCKER_NET" \
-  -u "$(id -u):$(id -g)" \
-  -v "$WORKSPACE":/workspace \
-  -w "/workspace/$LOCAL_TF_DIR" \
-  -e TF_IN_AUTOMATION=true \
-  -e TF_PLUGIN_CACHE_DIR=/workspace/.terraform.d/plugin-cache \
-  -e TF_VAR_enable_compute=false \
-  -e TF_VAR_enable_self_healing=false \
-  -e TF_VAR_enable_load_balancer=false \
-  --entrypoint '' hashicorp/terraform:1.7.0 sh -lc '
-    mkdir -p "$TF_PLUGIN_CACHE_DIR"
-    if [ -f terraform.tfstate ]; then
-      terraform destroy -input=false -auto-approve || true
-    fi
-  ' || true
+export TF_VAR_enable_compute=false
+export TF_VAR_enable_self_healing=false
+export TF_VAR_enable_load_balancer=false
+
+cd "$LOCAL_TF_DIR"
+if [ -d .terraform ]; then
+  terraform destroy -input=false -auto-approve || true
+fi
 
 docker rm -f "$LOCALSTACK_NAME" >/dev/null 2>&1 || true
 docker network rm "$DOCKER_NET" >/dev/null 2>&1 || true

@@ -1,6 +1,6 @@
 FROM jenkins/jenkins:2.541.2-jdk21
 USER root
-RUN apt-get update && apt-get install -y lsb-release ca-certificates curl && \
+RUN apt-get update && apt-get install -y lsb-release ca-certificates curl unzip wget python3 python3-pip python3-venv && \
     install -m 0755 -d /etc/apt/keyrings && \
     curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc && \
     chmod a+r /etc/apt/keyrings/docker.asc && \
@@ -8,6 +8,10 @@ RUN apt-get update && apt-get install -y lsb-release ca-certificates curl && \
     https://download.docker.com/linux/debian $(. /etc/os-release && echo \"$VERSION_CODENAME\") stable" \
     | tee /etc/apt/sources.list.d/docker.list > /dev/null && \
     apt-get update && apt-get install -y docker-ce-cli && \
+    curl -fsSL https://releases.hashicorp.com/terraform/1.7.0/terraform_1.7.0_linux_amd64.zip -o terraform.zip && \
+    unzip terraform.zip && mv terraform /usr/local/bin/ && rm terraform.zip && \
+    curl -s https://raw.githubusercontent.com/aquasecurity/tfsec/master/scripts/install_linux.sh | bash && \
+    pip3 install checkov --break-system-packages && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 USER jenkins
 RUN jenkins-plugin-cli --plugins "blueocean docker-workflow json-path-api"
