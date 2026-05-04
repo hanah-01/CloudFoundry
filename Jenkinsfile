@@ -38,7 +38,6 @@ pipeline {
         LOCAL_TF_DIR        = 'terraform/environments/local'
         PROD_TF_DIR         = 'terraform/environments/prod'
 
-        # AWS credentials are injected only in the prod stage.
     }
 
     stages {
