@@ -19,6 +19,13 @@ error()   { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 
 info "===== DevOps-Lab Environment Initializer ====="
 
+ENV="${1:-local}"
+TF_DIR="terraform/environments/${ENV}"
+
+if [ ! -d "${TF_DIR}" ]; then
+  error "Terraform environment folder not found: ${TF_DIR}"
+fi
+
 # ── 1. Check prerequisites ─────────────────────────────────
 info "Checking prerequisites..."
 
@@ -28,33 +35,47 @@ command -v ansible   >/dev/null 2>&1 || warn  "Ansible not found. Install it to 
 
 info "Prerequisites OK."
 
-# ── 2. Start LocalStack ────────────────────────────────────
-info "Starting LocalStack via Docker Compose..."
-docker compose -f docker/docker-compose.yml up -d
+if [ "${ENV}" = "local" ]; then
+  # ── 2. Start LocalStack ──────────────────────────────────
+  info "Starting LocalStack via Docker Compose..."
+  docker compose -f docker/docker-compose.yml up -d
 
-info "Waiting for LocalStack to be healthy..."
-attempt=0
-max_attempts=60
-until curl -sf http://localhost:4566/_localstack/health \
-      | grep -q '"s3": "running"' 2>/dev/null; do
-  attempt=$((attempt + 1))
-  if [ $attempt -ge $max_attempts ]; then
-    error "LocalStack did not become healthy after ${max_attempts} attempts."
+  info "Waiting for LocalStack to be healthy..."
+  attempt=0
+  max_attempts=60
+  until curl -sf http://localhost:4566/_localstack/health \
+        | grep -q '"s3": "running"' 2>/dev/null; do
+    attempt=$((attempt + 1))
+    if [ $attempt -ge $max_attempts ]; then
+      error "LocalStack did not become healthy after ${max_attempts} attempts."
+    fi
+    echo -n "."
+    sleep 5
+  done
+  echo ""
+  info "LocalStack is ready!"
+
+  if command -v aws >/dev/null 2>&1; then
+    info "Ensuring LocalStack backend bucket exists..."
+    aws --endpoint-url=http://localhost:4566 s3 mb s3://devops-lab-tf-state >/dev/null 2>&1 || true
+  else
+    warn "AWS CLI not found; create bucket manually: aws --endpoint-url=http://localhost:4566 s3 mb s3://devops-lab-tf-state"
   fi
-  echo -n "."
-  sleep 5
-done
-echo ""
-info "LocalStack is ready!"
+else
+  info "Skipping LocalStack startup (env=${ENV})."
+fi
 
 # ── 3. Terraform init ──────────────────────────────────────
 info "Running terraform init..."
-cd terraform
-terraform init -input=false
+cd "${TF_DIR}"
+if [ -f backend.hcl ]; then
+  terraform init -input=false -backend-config=backend.hcl
+else
+  terraform init -input=false
+fi
 cd ..
 info "Terraform initialized."
 
-# ── 4. Done ────────────────────────────────────────────────
 info "===== Setup complete ====="
 info "Next steps:"
 echo "  1.  bash scripts/apply.sh     – Plan & apply infrastructure"

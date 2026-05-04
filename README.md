@@ -1,58 +1,31 @@
 # DevOps Project
 
-**Infrastructure as Code (IaC)** 
+**Infrastructure as Code (IaC) + LocalStack + Jenkins CI/CD**
 
 ## Project Overview
 
-This project demonstrates modern DevOps practices by building a complete cloud infrastructure using **Terraform**, **LocalStack**, **Ansible**, **Docker**, and **Jenkins CI/CD**. It implements a serverless event-driven architecture
+This project demonstrates modern DevOps practices by provisioning AWS infrastructure with Terraform, testing locally using LocalStack, and automating the workflow with Jenkins. The design supports a **local validation path** and a **real AWS path** using environment folders.
 
-### Key Features
+## Key Features
 
-- **Infrastructure as Code**: Terraform for VPC, S3, Lambda, DynamoDB, EC2, IAM, API Gateway, CloudWatch
+- **Infrastructure as Code**: Terraform module for VPC, S3, Lambda, DynamoDB, API Gateway, EC2, and monitoring
 - **Cloud Simulation**: LocalStack for AWS service emulation
-- **Serverless Pipeline**: Lambda processes artifacts and stores metadata in DynamoDB
-- **API Gateway**: Exposes Lambda as a REST endpoint for direct HTTP uploads
-- **Monitoring & Logging**: CloudWatch log groups and alarms for Lambda error monitoring
-- **Automated Data Retention**: S3 lifecycle rules and DynamoDB TTL for cleanup
-- **CI/CD Automation**: Jenkins pipeline with security scanning (tfsec, Checkov), robust for local/cloud
-- **Configuration Management**: Ansible playbooks for server setup
-- **Security Best Practices**: S3 encryption, versioning, IAM least privilege
+- **Serverless Pipeline**: S3 -> Lambda -> DynamoDB
+- **Monitoring & Logging**: CloudWatch log groups and alarms
+- **CI/CD Automation**: Jenkins pipeline with local + prod stages
+- **Resource Friendly**: Production defaults minimize cost (single instance, no ALB/ASG)
 
 ---
 
-## Architecture
+## Architecture (High Level)
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                      VPC (10.0.0.0/16)                  │
-│  ┌───────────────────────────────────────────────────┐  │
-│  │  Public Subnet (10.0.1.0/24)                      │  │
-│  │  ┌────────────┐              ┌────────────┐       │  │
-│  │  │ EC2 Web    │              │  Security  │       │  │
-│  │  │  Server    │────────────▶ │   Group    │       │  │
-│  │  └────────────┘              └────────────┘       │  │
-│  └───────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────┘
-                      ▲
-                      │
-                      │ Internet Gateway
-                      │
-         ┌────────────┼────────────────────────┐
-         │            │                        │
-    ┌────▼────┐  ┌───▼──────┐      ┌─────────▼────────┐
-    │   S3    │  │  Lambda  │      │    DynamoDB       │
-    │ Bucket  │─▶│ Function │─────▶│  Metadata Table   │
-    └─────────┘  └──────────┘      └──────────────────┘
-                                    (artifact_id, timestamp, env)
+LocalStack (dev) / AWS (prod)
+
+S3 Bucket -> Lambda (processor) -> DynamoDB (metadata)
+                      |
+                      +-> API Gateway (HTTP /process)
 ```
-
-### Data Flow
-
-1. **Artifact Upload** → S3 bucket (`/artifacts/` prefix)
-2. **Event Trigger** → Lambda function invoked (S3 ObjectCreated event)
-3. **Processing** → Lambda parses event, generates UUID
-4. **Storage** → Metadata written to DynamoDB with timestamp
-5. **Query** → DynamoDB GSI allows environment-based queries
 
 ---
 
@@ -60,149 +33,130 @@ This project demonstrates modern DevOps practices by building a complete cloud i
 
 ```
 DevOps-Project/
-├── README.md                   
-├── terraform/                   # Infrastructure as Code
-│   ├── providers.tf             # AWS + LocalStack configuration
-│   ├── vpc.tf                   # Network infrastructure
-│   ├── s3.tf                    # Artifact storage bucket
-│   ├── lambda.tf                # Serverless function + IAM
-│   ├── dynamodb.tf              # Metadata table + GSI
-│   ├── ec2.tf                   # Web server instances
-│   ├── security_groups.tf       # Network rules
-│   ├── variables.tf             # Input variables
-│   ├── outputs.tf               # Resource outputs
-│   ├── terraform.tfvars         # LocalStack values
-│   └── backend.tf               # State configuration
-│
-├── lambda/                      # Serverless functions
-│   ├── handler.py               # Python Lambda function
-│   └── handler.zip              # Deployment package (generated)
-│
-├── docker/                      # LocalStack setup
-│   ├── docker-compose.yml       # Container orchestration
-│   └── .env                     # Auth token
-│
-├── ansible/                     # Configuration management
-│   ├── ansible.cfg              # Ansible settings
-│   ├── inventory/hosts.ini      # Target hosts
-│   └── playbooks/
-│       └── configure_webserver.yml
-│
-├── scripts/                     # Automation helpers
-│   ├── init.sh                  # Terraform init
-│   ├── apply.sh                 # Terraform apply
-│   └── destroy.sh               # Cleanup resources
-│
-└── Jenkinsfile                  # CI/CD pipeline
+├── Jenkinsfile
+├── Dockerfile
+├── docker/
+│   ├── docker-compose.yml
+│   └── init-scripts/
+│       ├── init-s3.sh
+│       └── test.txt
+├── lambda/
+│   ├── handler.py
+│   └── notifier.py
+├── scripts/
+│   ├── init.sh
+│   ├── apply.sh
+│   └── destroy.sh
+├── terraform/
+│   ├── environments/
+│   │   ├── local/
+│   │   └── prod/
+│   └── modules/
+│       └── web_stack/
+└── ansible/
 ```
 
 ---
 
-## Technologies Used
+## LocalStack (Local Validation)
 
-| Component | Technology | Purpose |
-|-----------|------------|---------|
-| **IaC** | Terraform 1.5+ | Declarative infrastructure provisioning |
-| **Cloud Sim** | LocalStack  | AWS service simulation (EC2, S3, Lambda, DynamoDB) |
-| **Compute** | AWS Lambda | Serverless artifact processing |
-| **Storage** | AWS S3 | Versioned, encrypted artifact repository |
-| **Database** | AWS DynamoDB | NoSQL metadata store with GSI |
-| **Network** | AWS VPC | Custom networking with public subnets |
-| **CI/CD** | Jenkins | Automated pipeline with security scanning |
-| **Security** | tfsec + Checkov | Infrastructure security validation |
-| **Config Mgmt** | Ansible | Automated server configuration |
-| **Containers** | Docker Compose | LocalStack orchestration |
-
----
-
-## Quick Start
-
-### Prerequisites
-
-- **Docker Desktop** (for LocalStack)
-- **Terraform** ≥ 1.5.0
-- **AWS CLI** v2
-- **Python** 3.11+
-- **PowerShell** 7+ (Windows) or Bash (Linux/Mac)
-- **LocalStack Pro** auth token (GitHub Student Developer Pack)
-
-### 1️⃣ Setup LocalStack
+### Start LocalStack
 
 ```powershell
 cd D:\devops-project\DevOps-Project
-
-echo "LOCALSTACK_AUTH_TOKEN=your-token-here" > docker\.env
-
-cd docker
-docker-compose up -d
-
-docker ps
+docker compose -f docker\docker-compose.yml up -d
 ```
 
-### 2️⃣ Deploy Infrastructure
+### Terraform Init (Local)
 
 ```powershell
-cd ..\terraform
-
-terraform init
-
-terraform plan
-
-terraform apply -auto-approve
+terraform -chdir=terraform/environments/local init
 ```
 
-### 3️⃣ Test Lambda Function
+### Terraform Plan / Apply (Local)
 
 ```powershell
-cd ..
-
-# Invoke Lambda manually
-aws --endpoint-url=http://localhost:4566 lambda invoke \
-  --function-name devops-lab-artifacts-processor \
-  --cli-binary-format raw-in-base64-out \
-  --payload file://payload.json \
-  response.json
-
-# Check response
-Get-Content response.json
+terraform -chdir=terraform/environments/local plan -out=tfplan
+terraform -chdir=terraform/environments/local apply -auto-approve tfplan
 ```
 
-
-### 4️⃣ Verify DynamoDB Records
+### Verify
 
 ```powershell
-# View stored metadata
-aws --endpoint-url=http://localhost:4566 dynamodb scan --table-name devops-lab-artifacts-metadata
+aws --endpoint-url=http://localhost:4566 s3 ls
+aws --endpoint-url=http://localhost:4566 dynamodb list-tables
+aws --endpoint-url=http://localhost:4566 lambda list-functions
 ```
 
-### 5️⃣ Test API Gateway Upload
+> If you want to use the bash scripts, install Git Bash or WSL. The error
+> `execvpe(/bin/bash) failed` means Bash is not installed on Windows.
 
-```powershell
-# Get the API Gateway endpoint
-terraform output -raw api_gateway_url
+---
 
-# Upload via HTTP POST
-Invoke-RestMethod -Uri <api_gateway_url> -Method POST -Body '{"key": "api-uploaded-file.zip"}' -ContentType "application/json"
+## AWS 
+
+### Step 1: Create AWS Backend (S3 + DynamoDB)
+
+1. S3 bucket for state: `your-terraform-state-bucket`
+2. DynamoDB table for lock: `terraform-state-lock` (partition key: `LockID`)
+
+### Step 2: Configure backend.hcl
+
+Copy and edit:
+
+```
+terraform/environments/prod/backend.hcl.example
 ```
 
-### 6️⃣ Check CloudWatch Logs & Alarms
+Create:
+
+```
+terraform/environments/prod/backend.hcl
+```
+
+### Step 3: Minimal Cost Defaults
+
+By default, prod runs with:
+- `enable_load_balancer = false`
+- `enable_self_healing = false`
+- `desired_capacity = 1`
+
+You can override in `terraform/environments/prod/terraform.tfvars`.
+
+### Step 4: Apply
 
 ```powershell
-# List CloudWatch alarms
-aws --endpoint-url=http://localhost:4566 cloudwatch describe-alarms --query "MetricAlarms[*].[AlarmName, StateValue]" --output table
-
-# View Lambda logs
-aws --endpoint-url=http://localhost:4566 logs filter-log-events --log-group-name "/aws/lambda/devops-lab-artifacts-processor"
-aws --endpoint-url=http://localhost:4566 logs filter-log-events --log-group-name "/aws/lambda/devops-lab-notification-service"
+terraform -chdir=terraform/environments/prod init -backend-config=backend.hcl
+terraform -chdir=terraform/environments/prod plan -out=tfplan
+terraform -chdir=terraform/environments/prod apply -auto-approve tfplan
 ```
 
 ---
 
-## CI/CD Pipeline (Jenkins)
+## Jenkins CI/CD
 
-The Jenkins pipeline (`Jenkinsfile`) is designed for robust local and cloud runs:
+Pipeline stages:
 
-- **EC2 is disabled by default** for LocalStack (set `TF_VAR_create_ec2=false`)
-- **Security scans** (`tfsec`, `checkov`) run but do not fail the build
-- **Terraform** runs full plan/apply/validate/format
-- **Resource verification**: S3, DynamoDB, Lambda are listed after apply
+- **LocalStack Validation** 
+  - Terraform init/plan/apply on LocalStack
+  - Always destroyed after build for zero cost
+
+- **AWS Deploy (Prod)** 
+  - Runs only if `RUN_PROD=true` and branch is `main/master/temp-f`
+  - Uses `backend.hcl` if present
+  - Student-tier friendly settings (single instance, no ALB/ASG)
+
+---
+
+## Notes on Cost Safety
+
+- Use LocalStack for most testing
+- Only enable prod stage for demos
+- Keep ALB and ASG disabled unless required
+- Use t3.micro or t2.micro for EC2
+
+---
+
+## IAM Policy (Minimal)
+
+See [docs/terraform-minimal-iam-policy.json](docs/terraform-minimal-iam-policy.json) for a minimal policy template.

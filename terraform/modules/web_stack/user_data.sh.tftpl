@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if command -v yum >/dev/null 2>&1; then
+  yum update -y
+  amazon-linux-extras install nginx1 -y
+  systemctl enable nginx
+  systemctl start nginx
+elif command -v apt-get >/dev/null 2>&1; then
+  apt-get update -y
+  apt-get install -y nginx
+  systemctl enable nginx
+  systemctl start nginx
+fi
+
+echo "<h1>${index_page_content}</h1><p>Environment: ${environment}</p>" > /usr/share/nginx/html/index.html
