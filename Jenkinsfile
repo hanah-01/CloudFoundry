@@ -123,6 +123,22 @@ export TF_VAR_enable_self_healing=false
 export TF_VAR_enable_load_balancer=false
 cd "$LOCAL_TF_DIR"
 mkdir -p "$TF_PLUGIN_CACHE_DIR"
+
+if [ ! -f "backend.localstack.hcl" ]; then
+  echo "bucket = \\"localstack-terraform-state\\"" > backend.localstack.hcl
+  echo "key = \\"devops/local/terraform.tfstate\\"" >> backend.localstack.hcl
+  echo "region = \\"us-east-1\\"" >> backend.localstack.hcl
+  echo "endpoints = { s3 = \\"http://localstack:4566\\" }" >> backend.localstack.hcl
+  echo "use_path_style = true" >> backend.localstack.hcl
+  echo "skip_credentials_validation = true" >> backend.localstack.hcl
+  echo "skip_metadata_api_check = true" >> backend.localstack.hcl
+  echo "skip_region_validation = true" >> backend.localstack.hcl
+  echo "skip_requesting_account_id = true" >> backend.localstack.hcl
+fi
+
+# Ensure bucket exists
+AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test aws --endpoint-url=http://localstack:4566 s3 mb s3://localstack-terraform-state || true
+
 terraform init -input=false -backend-config=backend.localstack.hcl
 terraform plan -input=false -out=tfplan
 if [ "${LOCAL_ACTION}" = "apply" ]; then
