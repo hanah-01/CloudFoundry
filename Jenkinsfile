@@ -70,11 +70,12 @@ pipeline {
         stage('Verify Tools') {
             steps {
                 sh '''#!/bin/sh
+                mkdir -p "$TF_PLUGIN_CACHE_DIR"
                 echo "LOCALSTACK_IMAGE=$LOCALSTACK_IMAGE"
                 aws --version || (echo "AWS CLI missing" && exit 1)
-                terraform version
+                terraform version || true
                 docker version
-                ls -R /tf
+                ls -R "$WORKSPACE"
                 '''
             }
         }
@@ -83,8 +84,8 @@ pipeline {
             steps {
                 sh '''#!/bin/sh
                 docker network create "$DOCKER_NET" || true
-                docker network connect "$DOCKER_NET" jenkins || true
-                docker network connect "$DOCKER_NET" "$LOCALSTACK_NAME" || true
+                docker network inspect "$DOCKER_NET" | grep jenkins || docker network connect "$DOCKER_NET" jenkins
+                docker network inspect "$DOCKER_NET" | grep "$LOCALSTACK_NAME" || docker network connect "$DOCKER_NET" "$LOCALSTACK_NAME"
                 curl -s --max-time 3 http://localstack:4566/_localstack/health || echo "Direct connectivity check failed, but continuing..."
                 '''
             }
@@ -99,20 +100,12 @@ pipeline {
         stage('Verify LocalStack Connectivity') {
             steps {
                 sh '''#!/bin/sh
-                echo "Waiting for LocalStack to be ready..."
-                MAX_RETRIES=30
-                COUNT=0
-                until curl -s http://localstack:4566/_localstack/health >/dev/null || [ $COUNT -eq $MAX_RETRIES ]; do
-                  echo "Waiting for LocalStack... ($((COUNT+1))/$MAX_RETRIES)"
-                  sleep 2
-                  COUNT=$((COUNT+1))
+                echo "Waiting for LocalStack Services (S3, Lambda, DynamoDB) to be ready..."
+                until curl -s http://localstack:4566/_localstack/health | jq -e '.services.s3=="running" and .services.lambda=="running" and .services.dynamodb=="running"' >/dev/null; do
+                  echo "waiting for core services to be running..."
+                  sleep 3
                 done
-
-                if [ $COUNT -eq $MAX_RETRIES ]; then
-                  echo "LocalStack failed to become ready in time"
-                  exit 1
-                fi
-                echo "LocalStack is ready"
+                echo "LocalStack core services are ready"
                 '''
             }
         }
@@ -124,7 +117,7 @@ pipeline {
             parallel {
                 stage('tfsec') {
                     steps {
-                        sh 'docker run --rm --network "$DOCKER_NET" -v "$WORKSPACE":/tf aquasec/tfsec /tf/${LOCAL_TF_DIR} --no-colour || true'
+                        sh 'docker run --rm --network "$DOCKER_NET" -v "$WORKSPACE":/tf aquasec/tfsec /tf/${LOCAL_TF_DIR} --min-severity HIGH --no-colour'
                     }
                 }
                 stage('Checkov') {
@@ -136,7 +129,8 @@ pipeline {
         bridgecrew/checkov \
         -d /tf/terraform/environments/local \
         --framework terraform \
-        --quiet || true
+        --check HIGH,CRITICAL \
+        --quiet
         '''
                     }
                 }
@@ -144,10 +138,11 @@ pipeline {
                 stage('Trivy') {
                     steps {
                         sh '''
+JENKINS_IMG=$(docker inspect -f '{{.Config.Image}}' jenkins)
 docker run --rm \
 --network "$DOCKER_NET" \
 -v /var/run/docker.sock:/var/run/docker.sock \
-aquasec/trivy:latest image docker-jenkins || true
+aquasec/trivy:latest image --severity HIGH,CRITICAL --exit-code 1 "$JENKINS_IMG"
 '''
                     }
                 }
@@ -177,15 +172,22 @@ if [ ! -f "backend.localstack.hcl" ]; then
   echo "skip_requesting_account_id = true" >> backend.localstack.hcl
 fi
 
-# Ensure bucket exists
-AWS_PAGER="" AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test aws --endpoint-url=http://localstack:4566 --no-cli-pager s3 mb s3://localstack-terraform-state || true
+# Deterministic S3 state bucket validation
+AWS_PAGER="" AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test \
+aws --endpoint-url=http://localstack:4566 --no-cli-pager s3 mb s3://localstack-terraform-state 2>/dev/null || true
+
+if ! AWS_PAGER="" AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test \
+     aws --endpoint-url=http://localstack:4566 --no-cli-pager s3api head-bucket --bucket localstack-terraform-state; then
+  echo "Terraform state bucket not ready"
+  exit 1
+fi
 
 terraform init -input=false -backend-config=backend.localstack.hcl
 terraform plan -input=false -out=tfplan
 if [ "${LOCAL_ACTION}" = "apply" ]; then
   terraform apply -input=false -auto-approve tfplan
 elif [ "${LOCAL_ACTION}" = "destroy" ]; then
-  terraform destroy -input=false -auto-approve || true
+  terraform destroy -input=false -auto-approve
 fi
 '''
             }
@@ -203,21 +205,39 @@ export AWS_PAGER=""
 export AWS_ACCESS_KEY_ID=test 
 export AWS_SECRET_ACCESS_KEY=test 
 export AWS_DEFAULT_REGION=us-east-1
+ARTIFACT_BUCKET="devops-lab-artifacts-bucket"
 
-echo "1. Creating test file..."
+echo "1. Ensuring artifact bucket exists..."
+aws --endpoint-url=http://localstack:4566 --no-cli-pager s3 mb "s3://${ARTIFACT_BUCKET}" 2>/dev/null || true
+aws --endpoint-url=http://localstack:4566 --no-cli-pager s3api head-bucket --bucket "${ARTIFACT_BUCKET}"
+
+echo "2. Creating test file..."
 echo "Hello from Jenkins Serverless Test" > test-artifact.txt
 
-echo "2. Uploading to S3..."
-aws --endpoint-url=http://localstack:4566 --no-cli-pager s3 cp test-artifact.txt s3://devops-lab-artifacts-bucket/ || true
+echo "3. Uploading to S3..."
+aws --endpoint-url=http://localstack:4566 --no-cli-pager s3 cp test-artifact.txt "s3://${ARTIFACT_BUCKET}/"
 
-echo "3. Waiting 10 seconds for Lambda & DynamoDB triggers to fully process..."
+echo "4. Waiting 10 seconds for Lambda & DynamoDB triggers to fully process..."
 sleep 10
 
-echo "4. Scanning DynamoDB Metadata Table for created artifact..."
+echo "5. Scanning DynamoDB Metadata Table for created artifact..."
 aws --endpoint-url=http://localstack:4566 --no-cli-pager dynamodb scan --table-name devops-lab-artifacts-metadata
 
 echo ">>> End of Tests. If you see items in DynamoDB above, the flow S3 -> Lambda -> DynamoDB worked perfectly!"
 '''
+            }
+        }
+
+        stage('Confirm Deployment') {
+            when {
+                allOf {
+                    expression { return params.RUN_PROD }
+                    expression { env.CHANGE_ID == null }
+                    branch 'main'
+                }
+            }
+            steps {
+                input message: "Deploy to PROD?", ok: "Deploy"
             }
         }
 
@@ -290,7 +310,7 @@ export TF_VAR_enable_load_balancer=false
 
 cd "$LOCAL_TF_DIR"
 if [ -d .terraform ] && [ "${DESTROY_AFTER_BUILD}" = "true" ]; then
-  terraform destroy -input=false -auto-approve || true
+  terraform destroy -input=false -auto-approve
 fi
 '''
         }
