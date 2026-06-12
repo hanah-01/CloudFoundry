@@ -34,9 +34,9 @@ pipeline {
         TF_IN_AUTOMATION    = 'true'
         TF_CLI_ARGS         = '-no-color'
 
-        AWS_REGION          = 'eu-north-1'
+        AWS_REGION = 'us-east-1'
         LOCALSTACK_NAME     = 'localstack-ci'
-        LOCALSTACK_IMAGE    = 'localstack/localstack:latest'
+        LOCALSTACK_IMAGE = 'localstack/localstack:3.0'
         DOCKER_NET          = 'devopsnet'
         TF_PLUGIN_CACHE_DIR = '/workspace/.terraform.d/plugin-cache'
 
