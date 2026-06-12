@@ -36,7 +36,7 @@ pipeline {
 
         AWS_REGION          = 'eu-north-1'
         LOCALSTACK_NAME     = 'localstack-ci'
-        LOCALSTACK_IMAGE    = 'localstack/localstack-pro:latest'
+        LOCALSTACK_IMAGE    = 'localstack/localstack:latest'
         DOCKER_NET          = 'devopsnet'
         TF_PLUGIN_CACHE_DIR = '/workspace/.terraform.d/plugin-cache'
 
@@ -68,7 +68,6 @@ docker rm -f "$LOCALSTACK_NAME" >/dev/null 2>&1 || true
                 sh '''#!/bin/sh
 set -eu
 docker run -d --name "$LOCALSTACK_NAME" --network "$DOCKER_NET" --network-alias localstack \
-  -e LOCALSTACK_AUTH_TOKEN=${LOCALSTACK_AUTH_TOKEN} \
   -e SERVICES=ec2,s3,iam,vpc,sts,lambda,dynamodb,cloudwatch,logs,apigateway \
   -e AWS_DEFAULT_REGION=$AWS_REGION \
   "$LOCALSTACK_IMAGE" >/dev/null
