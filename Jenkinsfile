@@ -23,6 +23,11 @@ pipeline {
             defaultValue: false,
             description: 'Skip tfsec / Checkov security scans'
         )
+        booleanParam(
+            name: 'DESTROY_AFTER_BUILD',
+            defaultValue: true,
+            description: 'Destroy LocalStack resources after pipeline'
+        )
     }
 
     environment {
@@ -31,7 +36,7 @@ pipeline {
 
         AWS_REGION          = 'eu-north-1'
         LOCALSTACK_NAME     = 'localstack-ci'
-        LOCALSTACK_IMAGE    = 'localstack/localstack:3.0'
+        LOCALSTACK_IMAGE    = 'localstack/localstack-pro:latest'
         DOCKER_NET          = 'devopsnet'
         TF_PLUGIN_CACHE_DIR = '/workspace/.terraform.d/plugin-cache'
 
@@ -63,7 +68,8 @@ docker rm -f "$LOCALSTACK_NAME" >/dev/null 2>&1 || true
                 sh '''#!/bin/sh
 set -eu
 docker run -d --name "$LOCALSTACK_NAME" --network "$DOCKER_NET" --network-alias localstack \
-  -e SERVICES=s3,iam,sts,lambda,dynamodb,cloudwatch,logs,apigateway \
+  -e LOCALSTACK_AUTH_TOKEN=${LOCALSTACK_AUTH_TOKEN} \
+  -e SERVICES=ec2,s3,iam,vpc,sts,lambda,dynamodb,cloudwatch,logs,apigateway \
   -e AWS_DEFAULT_REGION=$AWS_REGION \
   "$LOCALSTACK_IMAGE" >/dev/null
 '''
@@ -95,7 +101,7 @@ exit 1
             }
         }
 
-        stage('Security Scan (Local)') {
+        stage('Security Scan') {
             when {
                 expression { return !params.SKIP_SECURITY_SCAN }
             }
@@ -107,7 +113,22 @@ exit 1
                 }
                 stage('Checkov') {
                     steps {
-                        sh 'checkov -d ${LOCAL_TF_DIR} --quiet --compact || true'
+                        sh '''
+docker run --rm \
+-v "$PWD":/tf \
+bridgecrew/checkov \
+-d /tf/terraform \
+--compact || true
+'''
+                    }
+                }
+                stage('Trivy') {
+                    steps {
+                        sh '''
+docker run --rm \
+-v /var/run/docker.sock:/var/run/docker.sock \
+aquasec/trivy:latest image docker-jenkins || true
+'''
                     }
                 }
             }
@@ -146,6 +167,35 @@ if [ "${LOCAL_ACTION}" = "apply" ]; then
 elif [ "${LOCAL_ACTION}" = "destroy" ]; then
   terraform destroy -input=false -auto-approve || true
 fi
+'''
+            }
+        }
+
+        stage('Integration Tests (LocalStack)') {
+            when {
+                expression { return params.LOCAL_ACTION == 'apply' }
+            }
+            steps {
+                sh '''#!/bin/sh
+set -eu
+echo ">>> Running Integration Tests..."
+export AWS_ACCESS_KEY_ID=test 
+export AWS_SECRET_ACCESS_KEY=test 
+export AWS_DEFAULT_REGION=us-east-1
+
+echo "1. Creating test file..."
+echo "Hello from Jenkins Serverless Test" > test-artifact.txt
+
+echo "2. Uploading to S3..."
+aws --endpoint-url=http://localstack:4566 s3 cp test-artifact.txt s3://devops-lab-artifacts-bucket/ || true
+
+echo "3. Waiting 10 seconds for Lambda & DynamoDB triggers to fully process..."
+sleep 10
+
+echo "4. Scanning DynamoDB Metadata Table for created artifact..."
+aws --endpoint-url=http://localstack:4566 dynamodb scan --table-name devops-lab-artifacts-metadata
+
+echo ">>> End of Tests. If you see items in DynamoDB above, the flow S3 -> Lambda -> DynamoDB worked perfectly!"
 '''
             }
         }
@@ -218,7 +268,7 @@ export TF_VAR_enable_self_healing=false
 export TF_VAR_enable_load_balancer=false
 
 cd "$LOCAL_TF_DIR"
-if [ -d .terraform ]; then
+if [ -d .terraform ] && [ "${DESTROY_AFTER_BUILD}" = "true" ]; then
   terraform destroy -input=false -auto-approve || true
 fi
 
