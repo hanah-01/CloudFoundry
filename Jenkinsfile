@@ -35,13 +35,14 @@ pipeline {
         TF_CLI_ARGS         = '-no-color'
 
         AWS_REGION = 'us-east-1'
-        LOCALSTACK_NAME     = 'localstack-ci'
-        LOCALSTACK_IMAGE = 'localstack/localstack:3.0'
+        LOCALSTACK_NAME     = 'localstack'
+        LOCALSTACK_IMAGE    = 'localstack/localstack:3.0'
         DOCKER_NET          = 'devopsnet'
-        TF_PLUGIN_CACHE_DIR = '/workspace/.terraform.d/plugin-cache'
+        TF_PLUGIN_CACHE_DIR = '/var/jenkins_home/.terraform.d/plugin-cache'
 
         LOCAL_TF_DIR        = 'terraform/environments/local'
         PROD_TF_DIR         = 'terraform/environments/prod'
+        DESTROY_AFTER_BUILD = "${params.DESTROY_AFTER_BUILD}"
 
     }
 
@@ -53,50 +54,66 @@ pipeline {
             }
         }
 
-        stage('Prepare LocalStack') {
+        stage('System Diagnostics') {
             steps {
                 sh '''#!/bin/sh
-set -eu
-docker network inspect "$DOCKER_NET" >/dev/null 2>&1 || docker network create "$DOCKER_NET"
-docker rm -f "$LOCALSTACK_NAME" >/dev/null 2>&1 || true
-'''
+                echo "=== Disk Usage ==="
+                df -h
+                echo "=== Docker Info ==="
+                docker info
+                echo "=== Cleaning Docker System ==="
+                docker system prune -af --volumes || true
+                '''
             }
         }
 
-        stage('Start LocalStack') {
+        stage('Verify Tools') {
             steps {
                 sh '''#!/bin/sh
-set -eu
-docker run -d --name "$LOCALSTACK_NAME" --network "$DOCKER_NET" --network-alias localstack \
-  -e SERVICES=ec2,s3,iam,vpc,sts,lambda,dynamodb,cloudwatch,logs,apigateway \
-  -e AWS_DEFAULT_REGION=$AWS_REGION \
-  "$LOCALSTACK_IMAGE" >/dev/null
-'''
+                echo "LOCALSTACK_IMAGE=$LOCALSTACK_IMAGE"
+                aws --version || (echo "AWS CLI missing" && exit 1)
+                terraform version
+                docker version
+                ls -R /tf
+                '''
             }
         }
 
-        stage('Wait LocalStack Health') {
+        stage('Ensure Network Connectivity') {
             steps {
                 sh '''#!/bin/sh
-set -eu
-attempt=0
-max_attempts=30
-while [ "$attempt" -lt "$max_attempts" ]; do
-  health_status="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}unknown{{end}}' "$LOCALSTACK_NAME" 2>/dev/null || echo unknown)"
-  if [ "$health_status" = "healthy" ] && \
-     docker run --rm --network "$DOCKER_NET" --entrypoint '' curlimages/curl:latest \
-       sh -lc 'curl -s -f http://localstack:4566/_localstack/health'; then
-    echo "LocalStack is healthy"
-    exit 0
-  fi
-  attempt=$((attempt + 1))
-  echo "Waiting for LocalStack health (docker=${health_status}) attempt ${attempt}/${max_attempts}"
-  sleep 2
-done
-echo "LocalStack did not become healthy in time"
-docker logs --tail 120 "$LOCALSTACK_NAME" || true
-exit 1
-'''
+                docker network create "$DOCKER_NET" || true
+                docker network connect "$DOCKER_NET" jenkins || true
+                docker network connect "$DOCKER_NET" "$LOCALSTACK_NAME" || true
+                curl -s --max-time 3 http://localstack:4566/_localstack/health || echo "Direct connectivity check failed, but continuing..."
+                '''
+            }
+        }
+
+        stage('Prepull LocalStack') {
+            steps {
+                sh 'docker image inspect "$LOCALSTACK_IMAGE" >/dev/null 2>&1 || docker pull "$LOCALSTACK_IMAGE"'
+            }
+        }
+
+        stage('Verify LocalStack Connectivity') {
+            steps {
+                sh '''#!/bin/sh
+                echo "Waiting for LocalStack to be ready..."
+                MAX_RETRIES=30
+                COUNT=0
+                until curl -s http://localstack:4566/_localstack/health >/dev/null || [ $COUNT -eq $MAX_RETRIES ]; do
+                  echo "Waiting for LocalStack... ($((COUNT+1))/$MAX_RETRIES)"
+                  sleep 2
+                  COUNT=$((COUNT+1))
+                done
+
+                if [ $COUNT -eq $MAX_RETRIES ]; then
+                  echo "LocalStack failed to become ready in time"
+                  exit 1
+                fi
+                echo "LocalStack is ready"
+                '''
             }
         }
 
@@ -107,24 +124,28 @@ exit 1
             parallel {
                 stage('tfsec') {
                     steps {
-                        sh 'tfsec ${LOCAL_TF_DIR} --no-colour || true'
+                        sh 'docker run --rm --network "$DOCKER_NET" -v "$WORKSPACE":/tf aquasec/tfsec /tf/${LOCAL_TF_DIR} --no-colour || true'
                     }
                 }
                 stage('Checkov') {
                     steps {
                         sh '''
-docker run --rm \
--v "$PWD":/tf \
-bridgecrew/checkov \
--d /tf/terraform \
---compact || true
-'''
+        docker run --rm \
+        --network "$DOCKER_NET" \
+        -v "$WORKSPACE":/tf \
+        bridgecrew/checkov \
+        -d /tf/terraform/environments/local \
+        --framework terraform \
+        --quiet || true
+        '''
                     }
                 }
+
                 stage('Trivy') {
                     steps {
                         sh '''
 docker run --rm \
+--network "$DOCKER_NET" \
 -v /var/run/docker.sock:/var/run/docker.sock \
 aquasec/trivy:latest image docker-jenkins || true
 '''
@@ -157,7 +178,7 @@ if [ ! -f "backend.localstack.hcl" ]; then
 fi
 
 # Ensure bucket exists
-AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test aws --endpoint-url=http://localstack:4566 s3 mb s3://localstack-terraform-state || true
+AWS_PAGER="" AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test aws --endpoint-url=http://localstack:4566 --no-cli-pager s3 mb s3://localstack-terraform-state || true
 
 terraform init -input=false -backend-config=backend.localstack.hcl
 terraform plan -input=false -out=tfplan
@@ -178,6 +199,7 @@ fi
                 sh '''#!/bin/sh
 set -eu
 echo ">>> Running Integration Tests..."
+export AWS_PAGER=""
 export AWS_ACCESS_KEY_ID=test 
 export AWS_SECRET_ACCESS_KEY=test 
 export AWS_DEFAULT_REGION=us-east-1
@@ -186,13 +208,13 @@ echo "1. Creating test file..."
 echo "Hello from Jenkins Serverless Test" > test-artifact.txt
 
 echo "2. Uploading to S3..."
-aws --endpoint-url=http://localstack:4566 s3 cp test-artifact.txt s3://devops-lab-artifacts-bucket/ || true
+aws --endpoint-url=http://localstack:4566 --no-cli-pager s3 cp test-artifact.txt s3://devops-lab-artifacts-bucket/ || true
 
 echo "3. Waiting 10 seconds for Lambda & DynamoDB triggers to fully process..."
 sleep 10
 
 echo "4. Scanning DynamoDB Metadata Table for created artifact..."
-aws --endpoint-url=http://localstack:4566 dynamodb scan --table-name devops-lab-artifacts-metadata
+aws --endpoint-url=http://localstack:4566 --no-cli-pager dynamodb scan --table-name devops-lab-artifacts-metadata
 
 echo ">>> End of Tests. If you see items in DynamoDB above, the flow S3 -> Lambda -> DynamoDB worked perfectly!"
 '''
@@ -206,8 +228,6 @@ echo ">>> End of Tests. If you see items in DynamoDB above, the flow S3 -> Lambd
                     expression { env.CHANGE_ID == null }
                     anyOf {
                         branch 'main'
-                        branch 'master'
-                        branch 'temp-f'
                     }
                 }
             }
@@ -262,6 +282,8 @@ terraform output -raw alb_dns_name > ../../../prod_alb_dns_name.txt || true
         always {
             sh '''#!/bin/sh
 set +e
+docker network inspect "$DOCKER_NET" >/dev/null 2>&1 || docker network create "$DOCKER_NET" >/dev/null 2>&1
+
 export TF_VAR_enable_compute=false
 export TF_VAR_enable_self_healing=false
 export TF_VAR_enable_load_balancer=false
@@ -270,15 +292,12 @@ cd "$LOCAL_TF_DIR"
 if [ -d .terraform ] && [ "${DESTROY_AFTER_BUILD}" = "true" ]; then
   terraform destroy -input=false -auto-approve || true
 fi
-
-docker rm -f "$LOCALSTACK_NAME" >/dev/null 2>&1 || true
-docker network rm "$DOCKER_NET" >/dev/null 2>&1 || true
 '''
         }
 
         success {
             script {
-                if ((env.BRANCH_NAME == 'main' || env.BRANCH_NAME == 'master' || env.BRANCH_NAME=='temp-f') && fileExists('prod_alb_dns_name.txt')) {
+                if ((env.BRANCH_NAME == 'main') && fileExists('prod_alb_dns_name.txt')) {
                     def albDns = readFile('prod_alb_dns_name.txt').trim()
                     if (albDns) {
                         echo "Production ALB URL: http://${albDns}"
